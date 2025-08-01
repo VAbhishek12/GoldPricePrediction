@@ -1,10 +1,11 @@
 joblib
 streamlit
-scikit-learn
 numpy
-matplotlib
 pandas
+matplotlib
+scikit-learn
 yfinance
-scipy
-pandas_datareader
+keras
+tensorflow
+packaging
 distutils
