@@ -6,3 +6,4 @@ matplotlib
 pandas
 yfinance
 scipy
+pandas_datareader
