@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import yfinance as yf
 import datetime
 from sklearn.preprocessing import MinMaxScaler
-from keras.models import load_model
+from tensorflow.keras.models import load_model
 
 # Title
 st.title('Gold Price Prediction using LSTM (Live Deployment)')
