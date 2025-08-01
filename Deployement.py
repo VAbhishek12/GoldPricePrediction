@@ -1,76 +1,69 @@
-# Deployement.py
 import streamlit as st
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import joblib
-from sklearn.linear_model import LinearRegression
+from pandas_datareader import data as web
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
 
-# Title
-st.set_page_config(page_title="Gold Price Forecast App", page_icon="📊")
-st.title("📊 Gold Price Forecast App")
+st.set_page_config(page_title="Gold Price Forecast", layout="wide")
+st.title("📈 Gold Price Forecasting using LSTM")
 
-# Load the data
+# Load Data
 @st.cache_data
 def load_data():
-    df = pd.read_csv("monthly_gold_prices.csv")
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df.dropna(subset=['Date', 'Price'], inplace=True)
-    df.sort_values('Date', inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return df
+    df = web.DataReader('GLD', data_source='yahoo', start='2005-01-01', end='2021-06-01')
+    df.index = pd.to_datetime(df.index)
+    df_monthly = df['Close'].resample('M').last()
+    return pd.DataFrame(df_monthly)
 
-# Load model
-@st.cache_resource
-def load_model():
-    model = joblib.load("gold_price_model.pkl")
-    return model
-
-# Main
 df = load_data()
+st.subheader("Historical Monthly Gold Prices")
+st.line_chart(df)
 
-# Format and display the data
-st.subheader("Monthly Gold Price Data")
-st.dataframe(df)
+# Preprocessing
+data = df.values
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data)
 
-# Ensure proper formatting
-try:
-    price_series = df['Price']
-    if price_series.isnull().any():
-        st.error("Price column contains null values.")
-        st.stop()
-except Exception as e:
-    st.error(f"Monthly price data is not properly formatted. Error: {str(e)}")
-    st.stop()
+train_size = int(len(scaled_data) * 0.8)
+train_data = scaled_data[:train_size]
+test_data = scaled_data[train_size - 60:]
 
-# Load the trained model
-model = load_model()
+def create_dataset(dataset, time_step=60):
+    x, y = [], []
+    for i in range(time_step, len(dataset)):
+        x.append(dataset[i-time_step:i, 0])
+        y.append(dataset[i, 0])
+    return np.array(x), np.array(y)
 
-# Forecasting future prices
-st.subheader("🔮 Forecast Future Price")
-months = st.slider("Select number of future months to forecast", 1, 24, 12)
+X_train, y_train = create_dataset(train_data)
+X_test, y_test = create_dataset(test_data)
 
-# Prepare input for prediction
-df['MonthIndex'] = range(1, len(df) + 1)
-last_index = df['MonthIndex'].iloc[-1]
-future_months = pd.DataFrame({'MonthIndex': range(last_index + 1, last_index + months + 1)})
+X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
+X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
 
-# Predict
-predictions = model.predict(future_months)
+# Model
+model = Sequential([
+    LSTM(50, return_sequences=True, input_shape=(60, 1)),
+    LSTM(50),
+    Dense(1)
+])
+model.compile(optimizer='adam', loss='mean_squared_error')
+model.fit(X_train, y_train, epochs=10, batch_size=1, verbose=0)
 
-# Show predictions
-st.subheader("📈 Forecasted Prices")
-future_df = pd.DataFrame({
-    "MonthIndex": future_months['MonthIndex'],
-    "Forecasted Price": predictions
-})
-st.dataframe(future_df)
+# Prediction
+predicted_prices = model.predict(X_test)
+predicted_prices = scaler.inverse_transform(predicted_prices)
+real_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
 
 # Plot
-fig, ax = plt.subplots()
-ax.plot(df['MonthIndex'], df['Price'], label="Historical Price")
-ax.plot(future_df['MonthIndex'], future_df['Forecasted Price'], label="Forecasted Price", linestyle="--")
-ax.set_xlabel("Month Index")
-ax.set_ylabel("Gold Price")
-ax.set_title("Gold Price Forecast")
+fig, ax = plt.subplots(figsize=(12, 6))
+ax.plot(real_prices, color='blue', label='Actual Price')
+ax.plot(predicted_prices, color='red', label='Predicted Price')
+ax.set_title("Gold Price Prediction")
+ax.set_xlabel("Time")
+ax.set_ylabel("Price")
 ax.legend()
 st.pyplot(fig)
