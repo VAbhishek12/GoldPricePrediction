@@ -62,10 +62,7 @@ This project aims to forecast gold prices using machine learning techniques. By 
     *(Further instructions on how to use `Deployment.py` would depend on its specific implementation, e.g., if it takes command-line arguments or runs a web server.)*
 
 ## Results
-*(This is where you can showcase your model's performance and key insights using graphs and images. You will need to add these images yourself by placing them in your repository and referencing their paths.)*
 
-**Example of how to include an image:**
-```markdown
 ### Gold Price Trend
 ![Gold Price Trend](images/gold_price_trend.png)
 
