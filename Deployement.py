@@ -1,70 +1,61 @@
 import streamlit as st
-import joblib
-import numpy as np
 import pandas as pd
-import yfinance as yf
-from scipy.stats import boxcox
-import datetime
-import warnings
+import matplotlib.pyplot as plt
+import pickle
 
-warnings.filterwarnings("ignore")
+st.set_page_config(page_title="Gold Price Forecast App", page_icon=":bar_chart:")
 
 st.title("📊 Gold Price Forecast App")
 
+# Load model
+model = pickle.load(open("model.pkl", "rb"))
 
-gold_ticker = "GC=F"
-end_date = datetime.datetime.now().strftime('%Y-%m-%d')
-start_date = (datetime.datetime.now() - datetime.timedelta(days=8 * 365)).strftime('%Y-%m-%d')
+# Upload monthly gold price data
+uploaded_file = st.file_uploader("Upload Monthly Gold Price CSV", type=["csv"])
 
-data = yf.download(gold_ticker, start=start_date, end=end_date)
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)
 
-if data.empty or 'Close' not in data.columns:
-    st.error("Failed to fetch gold futures data. Try again later.")
-    st.stop()
+        # Try to infer the date column
+        date_col = None
+        for col in df.columns:
+            if pd.to_datetime(df[col], errors='coerce').notna().sum() > 0:
+                date_col = col
+                break
 
-data = data.reset_index()
-data = data[['Date', 'Close']]
-data.rename(columns={'Close': 'Price'}, inplace=True)
-data['Date'] = pd.to_datetime(data['Date'])
-data['Price'] = np.round(data['Price'], 2)
+        if date_col is None:
+            st.error("No date column found in the uploaded file.")
+        else:
+            df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+            df.sort_values(by=date_col, inplace=True)
 
-# Set index and interpolate
-data = data.set_index('Date')
-data['Price'] = data['Price'].interpolate(method='time')
+            # Assume the price column is the second column
+            price_col = [col for col in df.columns if col != date_col][0]
+            price_series = df[price_col]
 
-# Resample monthly average – clean Series
-price_series = data['Price'].resample('M').mean()
+            if not isinstance(price_series, pd.Series):
+                st.error("Price column is not a valid series.")
+            elif price_series.isnull().any():
+                st.error("Price column contains missing values.")
+            else:
+                st.success("Data successfully loaded and validated.")
 
-if price_series.isnull().any():
-    st.error("Monthly gold price contains missing values.")
-    st.stop()
+                # Plot actual prices
+                st.subheader("📈 Actual Gold Prices")
+                plt.figure(figsize=(10, 4))
+                plt.plot(df[date_col], price_series)
+                plt.xlabel("Date")
+                plt.ylabel("Gold Price")
+                st.pyplot(plt)
 
-# Apply Box-Cox
-data_boxcox = pd.Series(boxcox(price_series, lmbda=0), index=price_series.index)
+                # Forecasting
+                st.subheader("🔮 Forecast Next Month's Gold Price")
+                last_price = price_series.iloc[-1]
+                prediction = model.predict([[last_price]])
+                st.metric(label="Predicted Price", value=f"{prediction[0]:,.2f} INR")
 
-
-try:
-    loaded_model = joblib.load("gold_forecast.joblib")
-except Exception as e:
-    st.error("Model loading failed. Ensure 'gold_forecast.joblib' is present.")
-    st.stop()
-
-
-year = int(st.number_input("Enter the year: ", placeholder="YYYY", value=2025, step=1))
-month = int(st.number_input("Enter the month: ", placeholder="MM", value=8, step=1))
-
-def last_day_of_month(year, month):
-    return pd.Timestamp(year, month, 1) + pd.offsets.MonthEnd(0)
-
-last_day = last_day_of_month(year, month)
-
-# Forecast
-forecast_diff = np.round(loaded_model.forecast(steps=1), 6)
-forecast_boxcox = forecast_diff.cumsum()
-last_original_value = data_boxcox.iloc[-1]
-forecast_boxcox = forecast_boxcox + last_original_value
-forecast_price = np.round(np.exp(forecast_boxcox), 2)
-
-
-if st.button("Submit"):
-    st.success(f"📅 Forecasted Gold Price for {last_day.strftime('%B %Y')}: **{float(forecast_price.values)} USD**")
+    except Exception as e:
+        st.error(f"Error reading or processing file: {e}")
+else:
+    st.info("Please upload a CSV file containing monthly gold prices.")
