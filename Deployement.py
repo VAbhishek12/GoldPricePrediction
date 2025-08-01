@@ -3,64 +3,47 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import yfinance as yf
-import datetime
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import load_model
 
-# Title
-st.title('Gold Price Prediction using LSTM (Live Deployment)')
+st.title("Gold Price Prediction App")
 
-# Load data from Yahoo Finance
-start = datetime.datetime(2010, 1, 1)
-end = datetime.datetime.now()
+# Load model
+model = load_model("model.h5")
 
-df = yf.download('GC=F', start=start, end=end)  # Gold Futures symbol
-df = df[['Close']]  # Use only closing prices
-df = df.dropna()
+# Get historical gold prices
+@st.cache_data
+def load_data():
+    df = yf.download('GC=F', start='2010-01-01', end='2023-12-31')
+    return df[['Close']]
 
-st.subheader('Historical Gold Prices (Close)')
-st.line_chart(df['Close'])
+df = load_data()
 
-# Data Preprocessing
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(df['Close'].values.reshape(-1, 1))
+st.subheader("Historical Gold Price")
+st.line_chart(df)
 
-# Prepare testing data
-prediction_days = 60
-X_test = []
-y_test = []
+# Normalize data
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(df)
 
-for i in range(prediction_days, len(scaled_data)):
-    X_test.append(scaled_data[i - prediction_days:i, 0])
-    y_test.append(scaled_data[i, 0])
+# Prepare test data (last 100 days)
+past_days = 100
+x_test = []
+for i in range(past_days, len(scaled_data)):
+    x_test.append(scaled_data[i - past_days:i, 0])
 
-X_test, y_test = np.array(X_test), np.array(y_test)
-X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
+x_test = np.array(x_test)
+x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
-# Load pre-trained model
-model = load_model('gold_price_model.h5')
-
-# Predict
-predictions = model.predict(X_test)
+# Predict and inverse scale
+predictions = model.predict(x_test)
 predictions = scaler.inverse_transform(predictions)
-real_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-# Plotting
-st.subheader('Predicted vs Actual Prices')
+# Show prediction
+df['Predicted'] = np.nan
+df.iloc[-len(predictions):, df.columns.get_loc("Predicted")] = predictions.flatten()
+
+st.subheader("Actual vs Predicted")
 fig, ax = plt.subplots()
-ax.plot(real_prices, color='blue', label='Actual Price')
-ax.plot(predictions, color='red', label='Predicted Price')
-ax.set_xlabel("Days")
-ax.set_ylabel("Price")
-ax.legend()
+df[['Close', 'Predicted']].plot(ax=ax)
 st.pyplot(fig)
-
-# Latest Prediction
-latest_data = scaled_data[-prediction_days:]
-latest_data = np.array(latest_data)
-latest_data = np.reshape(latest_data, (1, latest_data.shape[0], 1))
-
-predicted_price = model.predict(latest_data)
-predicted_price = scaler.inverse_transform(predicted_price)
-
-st.success(f"📈 Predicted Gold Price for Tomorrow: **${predicted_price[0][0]:.2f}**")
