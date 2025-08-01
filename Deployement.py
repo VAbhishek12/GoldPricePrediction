@@ -14,7 +14,7 @@ st.title("📊 Gold Price Forecast App")
 
 gold_ticker = "GC=F"
 end_date = datetime.datetime.now().strftime('%Y-%m-%d')
-start_date = (datetime.datetime.now() - datetime.timedelta(days=8*365)).strftime('%Y-%m-%d')
+start_date = (datetime.datetime.now() - datetime.timedelta(days=8 * 365)).strftime('%Y-%m-%d')
 
 data = yf.download(gold_ticker, start=start_date, end=end_date)
 
@@ -24,49 +24,29 @@ if data.empty or 'Close' not in data.columns:
 
 data = data.reset_index()
 data = data[['Date', 'Close']]
-data['Date'] = pd.to_datetime(data['Date'])
 data.rename(columns={'Close': 'Price'}, inplace=True)
+data['Date'] = pd.to_datetime(data['Date'])
 data['Price'] = np.round(data['Price'], 2)
 
-data1 = data.set_index('Date')
-non_na_index = data1.index.dropna()
+# Set index and interpolate
+data = data.set_index('Date')
+data['Price'] = data['Price'].interpolate(method='time')
 
-if non_na_index.empty:
-    st.error("Invalid gold data. No valid dates found.")
-    st.stop()
-
-start_date = non_na_index.min()
-end_date = non_na_index.max()
-date_range = pd.date_range(start=start_date, end=end_date)
-
-data1 = data1.reindex(date_range)
-data1['Price'] = data1['Price'].interpolate(method='time')
-
-data1_bymonthly = data1.resample('M').mean()
-
-# ✅ Defensive checks before applying Box-Cox
-if 'Price' not in data1_bymonthly.columns:
-    st.error("Expected 'Price' column is missing in monthly data.")
-    st.stop()
-
-price_series = data1_bymonthly['Price']
-
-if not isinstance(price_series, pd.Series) or price_series.ndim != 1:
-    st.error("Monthly price data is not properly formatted.")
-    st.stop()
+# Resample monthly average – clean Series
+price_series = data['Price'].resample('M').mean()
 
 if price_series.isnull().any():
-    st.error("Monthly gold data contains missing values. Cannot proceed.")
+    st.error("Monthly gold price contains missing values.")
     st.stop()
 
-# Apply Box-Cox transformation
+# Apply Box-Cox
 data_boxcox = pd.Series(boxcox(price_series, lmbda=0), index=price_series.index)
 
 
 try:
     loaded_model = joblib.load("gold_forecast.joblib")
 except Exception as e:
-    st.error("Model loading failed. Ensure 'gold_forecast.joblib' is in the correct path.")
+    st.error("Model loading failed. Ensure 'gold_forecast.joblib' is present.")
     st.stop()
 
 
@@ -78,7 +58,7 @@ def last_day_of_month(year, month):
 
 last_day = last_day_of_month(year, month)
 
-# Forecast 1-step ahead
+# Forecast
 forecast_diff = np.round(loaded_model.forecast(steps=1), 6)
 forecast_boxcox = forecast_diff.cumsum()
 last_original_value = data_boxcox.iloc[-1]
