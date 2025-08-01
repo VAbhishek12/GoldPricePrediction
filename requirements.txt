@@ -1,11 +1,7 @@
-joblib
 streamlit
-numpy
+tensorflow
 pandas
+numpy
 matplotlib
 scikit-learn
 yfinance
-keras
-tensorflow
-packaging
-distutils
